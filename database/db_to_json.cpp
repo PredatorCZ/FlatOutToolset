@@ -1,5 +1,5 @@
 /*  DB2JSON
-    Copyright(C) 2022 Lukas Cone
+    Copyright(C) 2022-2023 Lukas Cone
 
     This program is free software : you can redistribute it and / or modify
     it under the terms of the GNU General Public License as published by
@@ -17,7 +17,7 @@
 
 #include "datas/app_context.hpp"
 #include "datas/binreader_stream.hpp"
-#include "datas/binwritter.hpp"
+#include "datas/binwritter_stream.hpp"
 #include "datas/except.hpp"
 #include "datas/fileinfo.hpp"
 #include "db.hpp"
@@ -27,29 +27,21 @@
 
 using nlohmann::json;
 
-es::string_view filters[]{
+std::string_view filters[]{
     ".db$",
-    {},
 };
 
-struct DB2JSON : ReflectorBase<DB2JSON> {
-} settings;
-
-REFLECT(CLASS(DB2JSON));
-
-AppInfo_s appInfo{
-    AppInfo_s::CONTEXT_VERSION,
-    AppMode_e::CONVERT,
-    ArchiveLoadType::FILTERED,
-    DB2JSON_DESC " v" DB2JSON_VERSION ", " DB2JSON_COPYRIGHT "Lukas Cone",
-    reinterpret_cast<ReflectorFriend *>(&settings),
-    filters,
+static AppInfo_s appInfo{
+    .filteredLoad = true,
+    .header =
+        DB2JSON_DESC " v" DB2JSON_VERSION ", " DB2JSON_COPYRIGHT "Lukas Cone",
+    .filters = filters,
 };
 
-const AppInfo_s *AppInitModule() { return &appInfo; }
+AppInfo_s *AppInitModule() { return &appInfo; }
 
-void AppProcessFile(std::istream &stream, AppContext *ctx) {
-  BinReaderRef rd(stream);
+void AppProcessFile(AppContext *ctx) {
+  BinReaderRef rd(ctx->GetStream());
   DB hdr;
   rd.Read(hdr);
 
@@ -68,7 +60,7 @@ void AppProcessFile(std::istream &stream, AppContext *ctx) {
   auto nodesEnd = nodesBegin + hdr.numNodes;
   json doc;
   json docSchema;
-  std::vector<es::string_view> parentNameStack;
+  std::vector<std::string_view> parentNameStack;
 
   for (auto n = nodesBegin; n < nodesEnd; n++) {
     if (n->Parent() == n) {
@@ -93,11 +85,11 @@ void AppProcessFile(std::istream &stream, AppContext *ctx) {
       cDocSchema = &(*cDocSchema)[parentNameStack.back()];
 
       if (!cDoc->is_null() && !cDoc->is_object()) {
-        cDoc = &(*prevDoc)["@" + parentNameStack.back().to_string()];
+        cDoc = &(*prevDoc)["@" + std::string(parentNameStack.back())];
       }
       if (!cDocSchema->is_null() && !cDocSchema->is_object()) {
         cDocSchema =
-            &(*prevDocSchema)["@" + parentNameStack.back().to_string()];
+            &(*prevDocSchema)["@" + std::string(parentNameStack.back())];
       }
 
       parentNameStack.pop_back();
@@ -284,12 +276,6 @@ void AppProcessFile(std::istream &stream, AppContext *ctx) {
     }
   }
 
-  AFileInfo finf(ctx->outFile);
-  BinWritter_t<BinCoreOpenMode::Text> wr(finf.GetFullPathNoExt().to_string() +
-                                       ".json");
-  wr.BaseStream() << std::setw(4) << doc;
-
-  BinWritter_t<BinCoreOpenMode::Text> wr2(finf.GetFullPathNoExt().to_string() +
-                                        ".schema.json");
-  wr2.BaseStream() << docSchema;
+  ctx->NewFile(ctx->workingFile.ChangeExtension(".json")) << std::setw(4) << doc;
+  ctx->NewFile(ctx->workingFile.ChangeExtension(".schema.json")) << std::setw(4) << docSchema;
 }

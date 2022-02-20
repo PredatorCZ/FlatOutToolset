@@ -1,5 +1,5 @@
 /*  DB common classes
-    Copyright(C) 2022 Lukas Cone
+    Copyright(C) 2022-2023 Lukas Cone
 
     This program is free software : you can redistribute it and / or modify
     it under the terms of the GNU General Public License as published by
@@ -17,7 +17,6 @@
 
 #pragma once
 #include "datas/reflector.hpp"
-#include "datas/string_view.hpp"
 
 struct DB {
   static constexpr uint32 ID = CompileFourCC("PDB\x1a");
@@ -50,7 +49,7 @@ struct DBValue {
     return reinterpret_cast<const C *>(this + 1);
   }
 
-  es::string_view Name() const {
+  std::string_view Name() const {
     return reinterpret_cast<const char *>(this) + nameOffset;
   }
 
@@ -69,7 +68,7 @@ struct DBNode {
   uint32 nodeNameOffset;
   uint32 dataOffset;
 
-  es::string_view Name() const {
+  std::string_view Name() const {
     return reinterpret_cast<const char *>(this) + nodeNameOffset;
   }
 

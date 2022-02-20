@@ -1,5 +1,5 @@
 /*  BFSPack
-    Copyright(C) 2022 Lukas Cone
+    Copyright(C) 2022-2023 Lukas Cone
 
     This program is free software : you can redistribute it and / or modify
     it under the terms of the GNU General Public License as published by
@@ -37,39 +37,26 @@ MAKE_ENUM(ENUMSCOPE(class Title, Title), EMEMBER(FlatOut1), EMEMBER(FlatOut2),
           EMEMBER(FlatOutUltimateCarnage));
 
 struct BFSPack : ReflectorBase<BFSPack> {
-  Title title = Title::FlatOut1;
-  uint32 compressThreshold = 90;
-  uint32 minFileSize = 0x80;
-  bool verbose = false;
+  Title title = Title::FlatOut2;
 } settings;
 
-REFLECT(
-    CLASS(BFSPack),
-    MEMBER(title, "t", ReflDesc{"Set title for correct archive handling."}),
-    MEMBERNAME(compressThreshold, "compress-threshold", "c",
-               ReflDesc{
-                   "Writes compressed data only when compression ratio is less "
-                   "than specified threshold [0 - 100]%"}),
-    MEMBERNAME(
-        minFileSize, "min-file-size", "m",
-        ReflDesc{
-            "Files that are smaller than specified size won't be compressed."}),
-    MEMBER(verbose, "v", ReflDesc{"Prints more information."}));
+REFLECT(CLASS(BFSPack),
+        MEMBER(title, "t",
+               ReflDesc{"Set title for correct archive handling."}));
 
-AppInfo_s appInfo{
-    AppInfo_s::CONTEXT_VERSION,
-    AppMode_e::PACK,
-    ArchiveLoadType::ALL,
-    BFSPack_DESC " v" BFSPack_VERSION ", " BFSPack_COPYRIGHT "Lukas Cone",
-    reinterpret_cast<ReflectorFriend *>(&settings),
+static AppInfo_s appInfo{
+    .header =
+        BFSPack_DESC " v" BFSPack_VERSION ", " BFSPack_COPYRIGHT "Lukas Cone",
+    .settings = reinterpret_cast<ReflectorFriend *>(&settings),
 };
 
-const AppInfo_s *AppInitModule() {
-  RegisterReflectedType<Title>();
-  return &appInfo;
+const CompressConf &CompOpts() {
+  return appInfo.internalSettings->compressSettings;
 }
 
-uint32 GetLookupIndex(es::string_view path) {
+AppInfo_s *AppInitModule() { return &appInfo; }
+
+uint32 GetLookupIndex(std::string_view path) {
   uint32 v1 = path.size();
   int32 v2 = (v1 >> 5) + 1;
   for (int32 i = v1; i >= v2; i -= v2) {
@@ -236,14 +223,17 @@ struct BfsMakeContext : AppPackContext {
   BfsMakeContext() = default;
   BfsMakeContext(const std::string &path) : outBfs(path) {
     // Some menu stuff cannot be compressed, causes crashes
-    dontCompress.AddFilter(es::string_view("data/menu/cars/"));
+    dontCompress.AddFilter(std::string_view("data/menu/cars/"));
     // Might be only _bg_ or _backgroud_
-    dontCompress.AddFilter(es::string_view("data/menu/*.tga$"));
-    dontCompress.AddFilter(es::string_view(".avi$"));
+    dontCompress.AddFilter(std::string_view("data/menu/*.tga$"));
+    dontCompress.AddFilter(std::string_view(".avi$"));
+
+    // FOUC, those are only ones
+    //dontCompress.AddFilter(std::string_view("data/cars/*.dds$"));
   }
   BfsMakeContext &operator=(BfsMakeContext &&) = default;
 
-  void SendFile(es::string_view path, std::istream &stream) override {
+  void SendFile(std::string_view path, std::istream &stream) override {
     stream.seekg(0, std::ios::end);
     const size_t streamSize = stream.tellg();
     stream.seekg(0);
@@ -285,15 +275,15 @@ struct BfsMakeContext : AppPackContext {
         ~crc32(0, reinterpret_cast<const Bytef *>(buffer.data()), streamSize);
     curFile.uncompSize = streamSize;
     bool writeOutBuffer =
-        streamSize > settings.minFileSize && !dontCompress.IsFiltered(path);
+        streamSize > CompOpts().minFileSize && !dontCompress.IsFiltered(path);
 
     if (writeOutBuffer) {
       compressedSize = CompressData(buffer);
 
       uint32 ratio = ((float)compressedSize / (float)streamSize) * 100;
-      writeOutBuffer = ratio <= settings.compressThreshold;
+      writeOutBuffer = ratio <= CompOpts().ratioThreshold;
 
-      if (!writeOutBuffer && settings.verbose) {
+      if (!writeOutBuffer && appInfo.internalSettings->verbosity) {
         printline("Ratio fail " << ratio << "%% for " << path);
       }
     }
@@ -367,6 +357,10 @@ struct BfsMakeContext : AppPackContext {
         }
 
         cFile.crc32 = f->crc32;
+        if (std::numeric_limits<decltype(cFile.dataOffset)>::max() <
+            pcDataBegin + f->streamOffset) {
+          throw std::runtime_error("Archive size limit exceeded!");
+        }
         cFile.dataOffset = pcDataBegin + f->streamOffset;
         cFile.uncompressedSize = f->uncompSize;
         f->selfOffset = wr.Tell();
@@ -402,9 +396,9 @@ struct BfsMakeContext : AppPackContext {
     BinWritterRef wrs(stringStr);
     std::vector<uint32> sOffsets;
     std::vector<uint16> sLens;
-    std::map<es::string_view, uint16> indices;
+    std::map<std::string_view, uint16> indices;
 
-    auto AddString = [&](es::string_view what) {
+    auto AddString = [&](std::string_view what) {
       sOffsets.push_back(wrs.Tell());
       sLens.push_back(what.size());
       uint8 cReg = 0;
@@ -429,8 +423,8 @@ struct BfsMakeContext : AppPackContext {
 
     for (auto &f : files) {
       size_t folderPart = f.path.find_last_of('/');
-      es::string_view folder(f.path.data(), folderPart);
-      es::string_view fileName(f.path.data() + folderPart + 1);
+      std::string_view folder(f.path.data(), folderPart);
+      std::string_view fileName(f.path.data() + folderPart + 1);
 
       if (!indices.count(folder)) {
         AddString(folder);
@@ -506,7 +500,8 @@ struct BfsMakeContext : AppPackContext {
 
     wr.Push();
     Header hdr;
-    hdr.signature = hdr.SIGNATURE;
+    hdr.signature =
+        settings.title == Title::FlatOut2 ? hdr.SIGNATURE : hdr.FOUCSIG;
     hdr.numFiles = files.size();
     wr.Write(hdr);
     wr.Skip(sizeof(HashIndex) * hdr.NUM_HASH_INDICES);
@@ -536,11 +531,15 @@ struct BfsMakeContext : AppPackContext {
         }
 
         cFile.crc32 = f->crc32;
+        if (std::numeric_limits<decltype(cFile.dataOffset)>::max() <
+            pcDataBegin + f->streamOffset) {
+          throw std::runtime_error("Archive size limit exceeded!");
+        }
         cFile.dataOffset = pcDataBegin + f->streamOffset;
         cFile.uncompressedSize = f->uncompSize;
         size_t folderPart = f->path.find_last_of('/');
-        es::string_view folder(f->path.data(), folderPart);
-        es::string_view fileName(f->path.data() + folderPart + 1);
+        std::string_view folder(f->path.data(), folderPart);
+        std::string_view fileName(f->path.data() + folderPart + 1);
         cFile.folderId = indices.at(folder);
         cFile.fileId = indices.at(fileName);
         f->selfOffset = wr.Tell();
@@ -579,7 +578,14 @@ struct BfsMakeContext : AppPackContext {
                        item.streamOffset += curOffset;
                        return std::move(item);
                      });
-      curOffset = tFiles.back().compSize + tFiles.back().streamOffset;
+
+      auto &lastFile = files.back();
+
+      if (lastFile.compSize != -1) {
+        curOffset = lastFile.compSize + lastFile.streamOffset;
+      } else {
+        curOffset = lastFile.uncompSize + lastFile.streamOffset;
+      }
     }
 
     BinWritter wr(outBfs);
@@ -619,8 +625,6 @@ struct BfsMakeContext : AppPackContext {
   }
 };
 
-static thread_local BfsMakeContext archive;
-
 AppPackContext *AppNewArchive(const std::string &folder, const AppPackStats &) {
   auto file = folder;
   while (file.back() == '/') {
@@ -628,5 +632,5 @@ AppPackContext *AppNewArchive(const std::string &folder, const AppPackStats &) {
   }
 
   file += ".bfs";
-  return &(archive = BfsMakeContext(file));
+  return new BfsMakeContext(file);
 }
