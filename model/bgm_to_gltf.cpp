@@ -23,7 +23,6 @@
 #include "datas/flags.hpp"
 #include "datas/master_printer.hpp"
 #include "datas/matrix44.hpp"
-#include "datas/reflector.hpp"
 #include "gltf.hpp"
 #include "nlohmann/json.hpp"
 #include "project.h"
@@ -37,17 +36,12 @@ es::string_view filters[]{
     {},
 };
 
-struct BGM2GLTF : ReflectorBase<BGM2GLTF> {
-} settings;
-
-REFLECT(CLASS(BGM2GLTF));
-
 AppInfo_s appInfo{
     AppInfo_s::CONTEXT_VERSION,
     AppMode_e::CONVERT,
     ArchiveLoadType::ALL,
     BGM2GLTF_DESC " v" BGM2GLTF_VERSION ", " BGM2GLTF_COPYRIGHT "Lukas Cone",
-    reinterpret_cast<ReflectorFriend *>(&settings),
+    nullptr,
     filters,
 };
 
@@ -100,7 +94,7 @@ static constexpr uint32 vertexBufferFlagsMask =
 
 struct Buffer {
   BufferType type;
-  uint32 null;
+  uint32 subType;
   uint32 numItems;
 };
 
@@ -142,7 +136,7 @@ struct PrimitiveGeneric : PrimitiveBase {
   }
 };
 
-struct PrimitiveOverlay : PrimitiveGeneric {
+struct PrimitiveWithBBOX : PrimitiveGeneric {
   float unk0[6]; // bbox?
 
   void Read(BinReaderRef rd) {
@@ -230,6 +224,13 @@ struct TrackModel {
   float unk3[6];
 };
 
+struct TrackModelFO1 {
+  uint32 primitiveIndex;
+  uint32 unk1; // lod index?
+  uint32 bvhItemId;
+  uint32 null;
+};
+
 struct SpriteVertex {
   float pos[3];
   float uv[2];
@@ -299,6 +300,7 @@ struct MainGLTF : GLTF {
   std::map<size_t, gltf::Attributes> attrs;
   size_t bmodsBegin = 0;
   size_t spriteIndicesBuffView = 0;
+  bool isFOUC = false;
 
   void GetMaterials(BinReaderRef rd) {
     std::vector<Material> mats;
@@ -338,10 +340,7 @@ struct MainGLTF : GLTF {
     for (size_t i = 0; i < numBuffers; i++) {
       Buffer hdr;
       rd.Read(hdr);
-
-      if (hdr.null) {
-        printwarning("Buffer field not null.");
-      }
+      isFOUC = hdr.null;
 
       switch (hdr.type) {
       case BufferType::Vertex: {
@@ -360,52 +359,76 @@ struct MainGLTF : GLTF {
         nStream.target = gltf::BufferView::TargetType::ArrayBuffer;
         restream(nStream);
 
-        size_t curOffset = 0;
         gltf::Accessor baseAcc;
         baseAcc.bufferView = nStream.slot;
         baseAcc.count = hdr.numItems;
-        baseAcc.componentType = gltf::Accessor::ComponentType::Float;
+        baseAcc.componentType = gltf::Accessor::ComponentType::Short;
         auto &attributes = attrs[nStream.slot];
 
-        if (flags[VertexBufferFlags::Position]) {
+        if (isFOUC) {
           attributes["POSITION"] = accessors.size();
           auto &acc = accessors.emplace_back(baseAcc);
           acc.type = gltf::Accessor::Type::Vec3;
-          curOffset += 12;
-        }
 
-        if (flags[VertexBufferFlags::Normal]) {
-          attributes["NORMAL"] = accessors.size();
-          auto &acc = accessors.emplace_back(baseAcc);
-          acc.type = gltf::Accessor::Type::Vec3;
-          acc.byteOffset += curOffset;
-          curOffset += 12;
-        }
+          switch (hdr.subType) {
+          case 0x16: {
+            attributes["COLOR_0"] = accessors.size();
+            auto &acc = accessors.emplace_back(baseAcc);
+            acc.componentType = gltf::Accessor::ComponentType::UnsignedByte;
+            acc.normalized = true;
+            acc.type = gltf::Accessor::Type::Vec4;
+            acc.byteOffset = 20;
 
-        if (flags[VertexBufferFlags::ColorOrBoneWeights]) {
-          attributes["COLOR_0"] = accessors.size();
-          auto &acc = accessors.emplace_back(baseAcc);
-          acc.componentType = gltf::Accessor::ComponentType::UnsignedByte;
-          acc.normalized = true;
-          acc.type = gltf::Accessor::Type::Vec4;
-          acc.byteOffset += curOffset;
-          curOffset += 4;
-        }
+            break;
+          }
 
-        if (flags[VertexBufferFlags::UV1] || flags[VertexBufferFlags::UV2]) {
-          attributes["TEXCOORD_0"] = accessors.size();
-          auto &acc = accessors.emplace_back(baseAcc);
-          acc.type = gltf::Accessor::Type::Vec2;
-          acc.byteOffset += curOffset;
-          curOffset += 8;
-        }
+          default:
+            break;
+          }
 
-        if (flags[VertexBufferFlags::UV2]) {
-          attributes["TEXCOORD_1"] = accessors.size();
-          auto &acc = accessors.emplace_back(baseAcc);
-          acc.type = gltf::Accessor::Type::Vec2;
-          acc.byteOffset += curOffset;
-          curOffset += 8;
+        } else {
+          size_t curOffset = 0;
+
+          if (flags[VertexBufferFlags::Position]) {
+            attributes["POSITION"] = accessors.size();
+            auto &acc = accessors.emplace_back(baseAcc);
+            acc.type = gltf::Accessor::Type::Vec3;
+            curOffset += 12;
+          }
+
+          if (flags[VertexBufferFlags::Normal]) {
+            attributes["NORMAL"] = accessors.size();
+            auto &acc = accessors.emplace_back(baseAcc);
+            acc.type = gltf::Accessor::Type::Vec3;
+            acc.byteOffset += curOffset;
+            curOffset += 12;
+          }
+
+          if (flags[VertexBufferFlags::ColorOrBoneWeights]) {
+            attributes["COLOR_0"] = accessors.size();
+            auto &acc = accessors.emplace_back(baseAcc);
+            acc.componentType = gltf::Accessor::ComponentType::UnsignedByte;
+            acc.normalized = true;
+            acc.type = gltf::Accessor::Type::Vec4;
+            acc.byteOffset += curOffset;
+            curOffset += 4;
+          }
+
+          if (flags[VertexBufferFlags::UV1] || flags[VertexBufferFlags::UV2]) {
+            attributes["TEXCOORD_0"] = accessors.size();
+            auto &acc = accessors.emplace_back(baseAcc);
+            acc.type = gltf::Accessor::Type::Vec2;
+            acc.byteOffset += curOffset;
+            curOffset += 8;
+          }
+
+          if (flags[VertexBufferFlags::UV2]) {
+            attributes["TEXCOORD_1"] = accessors.size();
+            auto &acc = accessors.emplace_back(baseAcc);
+            acc.type = gltf::Accessor::Type::Vec2;
+            acc.byteOffset += curOffset;
+            curOffset += 8;
+          }
         }
 
         break;
@@ -421,6 +444,10 @@ struct MainGLTF : GLTF {
       }
 
       case BufferType::Sprite: {
+        if (isFOUC) {
+          throw std::runtime_error("Sprite buffer not supported for FOUC.");
+        }
+
         uint32 stride;
         rd.Read(stride);
         auto &nStream = NewStream(std::to_string(i) + "sprites", stride);
@@ -510,8 +537,8 @@ struct MainGLTF : GLTF {
     }
   }
 
-  void GetPrimitivesOverlay(BinReaderRef rd) {
-    std::vector<PrimitiveOverlay> prims;
+  void GetPrimitivesBBOXed(BinReaderRef rd) {
+    std::vector<PrimitiveWithBBOX> prims;
     rd.ReadContainer(prims);
 
     for (auto &p : prims) {
@@ -563,13 +590,13 @@ struct MainGLTF : GLTF {
         model.name.push_back(']');
       }
 
-      model.mesh = m.meshes.front();
+      model.mesh = bmodsBegin + m.meshes.front();
       memcpy(model.matrix.data(), m.tm, 64);
 
       for (size_t p = 1; p < m.meshes.size(); p++) {
         nodes.at(modelIndex).children.push_back(nodes.size());
         auto &sModel = nodes.emplace_back();
-        sModel.mesh = m.meshes[p];
+        sModel.mesh = bmodsBegin + m.meshes[p];
       }
     }
   }
@@ -773,12 +800,12 @@ struct MainGLTF : GLTF {
     }
   }
 
-  void GetMapData(BinReaderRef rd) {
+  template <class struc = TrackModel> void GetMapData(BinReaderRef rd) {
     const size_t mapNodeIndex = nodes.size();
     scenes.back().nodes.push_back(mapNodeIndex);
     nodes.emplace_back().name = "Map";
 
-    std::vector<TrackModel> terrain;
+    std::vector<struc> terrain;
     rd.ReadContainer(terrain);
 
     for (auto &t : terrain) {
@@ -863,14 +890,36 @@ void AppProcessFile(std::istream &stream, AppContext *ctx) {
   MainGLTF main;
   AFileInfo finf(ctx->workingFile);
 
+  switch (meshType) {
+  case 0x20001:
+  case 0x20002: {
+    uint32 unk;
+    rd.Read(unk);
+
+    if (unk != 1) {
+      printwarning("Invalid unk value " << unk);
+    }
+  }
+  case 0x20000:
+  case 0x10004:
+  case 0x10002:
+  case 0x10005:
+    break;
+
+  default:
+    throw std::runtime_error("Invalid mesh type: " + std::to_string(meshType));
+  }
+
   // NOTE: FO2 PC only
   // TODO:  Generate sprite polys
   //        Foliage LODs, indices
   //        Might be overkill but bvh grouping?
 
-  if (meshType == 0x20000) {
-    main.GetMaterials(rd);
-    main.GetBuffers(rd);
+  main.GetMaterials(rd);
+  main.GetBuffers(rd);
+
+  switch (meshType) {
+  case 0x20000: {
     main.GetPrimitivesGeneric(rd);
     main.GetBMODs(rd);
     main.GetMESHes(rd);
@@ -886,20 +935,13 @@ void AppProcessFile(std::istream &stream, AppContext *ctx) {
       }
     }
     main.CleanMeta();
-  } else if (meshType == 0x10004) {
-    main.GetMaterials(rd);
-    main.GetBuffers(rd);
-    main.GetPrimitivesOverlay(rd);
-    main.GetBMODs(rd);
-    main.GetMESHes(rd);
-  } else if (meshType == 0x20001) {
-    uint32 unk;
-    rd.Read(unk);
+    break;
+  }
 
-    if (unk != 1) {
-      printwarning("Invalid unk value " << unk);
-    }
-
+  // FO2 map format
+  case 0x20001:
+  // FOUC map format
+  case 0x20002:
     main.GetMaterials(rd);
     main.GetBuffers(rd);
     main.GetPrimitivesGeneric(rd, true);
@@ -909,8 +951,32 @@ void AppProcessFile(std::istream &stream, AppContext *ctx) {
     main.GetBMODs(rd);
     main.GetObjects(rd);
     main.GetDynamics(rd);
-  } else {
-    throw std::runtime_error("Invalid mesh type: " + std::to_string(meshType));
+    break;
+
+  // FO1 car format
+  case 0x10004:
+  // FO1 skinned mesh format
+  case 0x10002:
+    main.GetMaterials(rd);
+    main.GetBuffers(rd);
+    main.GetPrimitivesBBOXed(rd);
+    main.GetBMODs(rd);
+    main.GetMESHes(rd);
+    main.GetObjects(rd);
+    break;
+
+  // FO1 map format
+  case 0x10005:
+    main.GetMaterials(rd);
+    main.GetBuffers(rd);
+    main.GetPrimitivesBBOXed(rd);
+    main.GetMapData<TrackModelFO1>(rd);
+    main.GetFoliages(rd);
+    rd.Skip(64);
+    main.GetBMODs(rd);
+    main.GetObjects(rd);
+    main.GetMESHes(rd);
+    break;
   }
 
   AFileInfo outPath(ctx->outFile);

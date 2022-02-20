@@ -32,17 +32,12 @@ es::string_view filters[]{
     {},
 };
 
-struct DB2JSON : ReflectorBase<DB2JSON> {
-} settings;
-
-REFLECT(CLASS(DB2JSON));
-
 AppInfo_s appInfo{
     AppInfo_s::CONTEXT_VERSION,
     AppMode_e::CONVERT,
     ArchiveLoadType::FILTERED,
     DB2JSON_DESC " v" DB2JSON_VERSION ", " DB2JSON_COPYRIGHT "Lukas Cone",
-    reinterpret_cast<ReflectorFriend *>(&settings),
+    nullptr,
     filters,
 };
 

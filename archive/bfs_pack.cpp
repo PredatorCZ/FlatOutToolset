@@ -37,24 +37,12 @@ MAKE_ENUM(ENUMSCOPE(class Title, Title), EMEMBER(FlatOut1), EMEMBER(FlatOut2),
           EMEMBER(FlatOutUltimateCarnage));
 
 struct BFSPack : ReflectorBase<BFSPack> {
-  Title title = Title::FlatOut1;
-  uint32 compressThreshold = 90;
-  uint32 minFileSize = 0x80;
-  bool verbose = false;
+  Title title = Title::FlatOut2;
 } settings;
 
-REFLECT(
-    CLASS(BFSPack),
-    MEMBER(title, "t", ReflDesc{"Set title for correct archive handling."}),
-    MEMBERNAME(compressThreshold, "compress-threshold", "c",
-               ReflDesc{
-                   "Writes compressed data only when compression ratio is less "
-                   "than specified threshold [0 - 100]%"}),
-    MEMBERNAME(
-        minFileSize, "min-file-size", "m",
-        ReflDesc{
-            "Files that are smaller than specified size won't be compressed."}),
-    MEMBER(verbose, "v", ReflDesc{"Prints more information."}));
+REFLECT(CLASS(BFSPack),
+        MEMBER(title, "t",
+               ReflDesc{"Set title for correct archive handling."}));
 
 AppInfo_s appInfo{
     AppInfo_s::CONTEXT_VERSION,
@@ -63,6 +51,10 @@ AppInfo_s appInfo{
     BFSPack_DESC " v" BFSPack_VERSION ", " BFSPack_COPYRIGHT "Lukas Cone",
     reinterpret_cast<ReflectorFriend *>(&settings),
 };
+
+const CompressConf &CompOpts() {
+  return appInfo.internalSettings->compressSettings;
+}
 
 const AppInfo_s *AppInitModule() {
   RegisterReflectedType<Title>();
@@ -285,15 +277,15 @@ struct BfsMakeContext : AppPackContext {
         ~crc32(0, reinterpret_cast<const Bytef *>(buffer.data()), streamSize);
     curFile.uncompSize = streamSize;
     bool writeOutBuffer =
-        streamSize > settings.minFileSize && !dontCompress.IsFiltered(path);
+        streamSize > CompOpts().minFileSize && !dontCompress.IsFiltered(path);
 
     if (writeOutBuffer) {
       compressedSize = CompressData(buffer);
 
       uint32 ratio = ((float)compressedSize / (float)streamSize) * 100;
-      writeOutBuffer = ratio <= settings.compressThreshold;
+      writeOutBuffer = ratio <= CompOpts().ratioThreshold;
 
-      if (!writeOutBuffer && settings.verbose) {
+      if (!writeOutBuffer && appInfo.internalSettings->verbosity) {
         printline("Ratio fail " << ratio << "%% for " << path);
       }
     }

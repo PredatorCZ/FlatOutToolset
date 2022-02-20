@@ -20,7 +20,6 @@
 #include "datas/binreader_stream.hpp"
 #include "datas/except.hpp"
 #include "datas/master_printer.hpp"
-#include "datas/reflector.hpp"
 #include "project.h"
 #include "zlib.h"
 #include <vector>
@@ -31,18 +30,13 @@ es::string_view filters[]{
     {},
 };
 
-struct BFSExtract : ReflectorBase<BFSExtract> {
-} settings;
-
-REFLECT(CLASS(BFSExtract));
-
 AppInfo_s appInfo{
     AppInfo_s::CONTEXT_VERSION,
     AppMode_e::EXTRACT,
     ArchiveLoadType::FILTERED,
     BFSExtract_DESC " v" BFSExtract_VERSION ", " BFSExtract_COPYRIGHT
                     "Lukas Cone",
-    reinterpret_cast<ReflectorFriend *>(&settings),
+    nullptr,
     filters,
 };
 
