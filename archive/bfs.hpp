@@ -16,7 +16,7 @@
 */
 
 #pragma once
-#include "datas/supercore.hpp"
+#include "spike/util/supercore.hpp"
 
 struct Header {
   static constexpr uint32 SIGNATURE = 0x20040505;
@@ -28,6 +28,21 @@ struct Header {
   uint32 headerSize;
   uint32 numFiles;
   uint32 numHashIndices = NUM_HASH_INDICES; // FO2 and later (asserted)
+};
+
+struct HeaderRCU {
+  static constexpr uint32 SIGNATURE = 0x20111220;
+  uint32 id = Header::ID;
+  uint32 signature; // (asserted)
+  uint32 headerSize;
+  uint32 numFiles;
+  uint32 unk; // always 1
+
+  uint32 HeaderSize() { return headerSize & ~0x80000000; }
+};
+
+struct HeaderRCUDec : HeaderRCU {
+  uint32 next_;
 };
 
 struct HashIndexFO1 {

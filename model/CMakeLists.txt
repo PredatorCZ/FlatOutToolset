@@ -1,15 +1,17 @@
 cmake_minimum_required(VERSION 3.12)
 
-project(BGM2GLTF VERSION 1.0)
+project(BGM2GLTF)
 
 build_target(
   NAME
   bgm_to_gltf
   TYPE
   ESMODULE
+  VERSION
+  1
   LINKS
-  precore
-  gltf-shared
+  spike-interface
+  gltf-interface
   INCLUDES
   SOURCES
   bgm_to_gltf.cpp

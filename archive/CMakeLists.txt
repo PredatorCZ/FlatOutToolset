@@ -5,6 +5,7 @@ file(GLOB ZLIB_SOURCES "${TPD_PATH}/zlib/*.c")
 add_library(zlib_objs OBJECT ${ZLIB_SOURCES})
 target_include_directories(zlib_objs PUBLIC ${TPD_PATH}/zlib)
 set_target_properties(zlib_objs PROPERTIES POSITION_INDEPENDENT_CODE ON)
+set(CMAKE_BUILD_TYPE debug)
 
 project(BFSExtract VERSION 1.0)
 
@@ -14,7 +15,7 @@ build_target(
   TYPE
   ESMODULE
   LINKS
-  precore
+  spike-interface
   zlib_objs
   SOURCES
   bfs_extract.cpp
@@ -25,8 +26,6 @@ build_target(
   START_YEAR
   2022)
 
-install(TARGETS bfs_extract DESTINATION bin)
-
 project(BFSPack VERSION 1.0)
 
 build_target(
@@ -35,7 +34,7 @@ build_target(
   TYPE
   ESMODULE
   LINKS
-  precore
+  spike-interface
   zlib_objs
   SOURCES
   bfs_pack.cpp
@@ -45,5 +44,3 @@ build_target(
   "Flatout BFS packer"
   START_YEAR
   2022)
-
-install(TARGETS bfs_pack DESTINATION bin)

@@ -8,9 +8,9 @@ build_target(
   TYPE
   ESMODULE
   LINKS
-  precore
+  spike-interface
   INCLUDES
-  ${PRECORE_SOURCE_DIR}/3rd_party/json
+  ${TPD_PATH}/spike/3rd_party/json
   SOURCES
   db_to_json.cpp
   AUTHOR
@@ -19,26 +19,3 @@ build_target(
   "Flatout database to json converter"
   START_YEAR
   2022)
-
-install(TARGETS bfs_extract DESTINATION bin)
-
-# project(JSON2DB VERSION 1.0)
-
-# build_target(
-#   NAME
-#   bfs_pack
-#   TYPE
-#   ESMODULE
-#   LINKS
-#   precore
-#   zlib_objs
-#   SOURCES
-#   bfs_pack.cpp
-#   AUTHOR
-#   "Lukas Cone"
-#   DESCR
-#   "Flatout BFS packer"
-#   START_YEAR
-#   2022)
-# 
-# install(TARGETS bfs_pack DESTINATION bin)
