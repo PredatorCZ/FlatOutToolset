@@ -1,10 +1,10 @@
 cmake_minimum_required(VERSION 3.12)
 
-project(Plants2GLTF)
+project(CDB2GLTF)
 
 build_target(
   NAME
-  plants_to_gltf
+  cdb_to_gltf
   TYPE
   ESMODULE
   VERSION
@@ -14,10 +14,10 @@ build_target(
   gltf-interface
   INCLUDES
   SOURCES
-  plants_to_gltf.cpp
+  cdb_to_gltf.cpp
   AUTHOR
   "Lukas Cone"
   DESCR
-  "Flatout plant_geom to GLTF converter"
+  "Flatout track_cdb to GLTF converter"
   START_YEAR
-  2022)
+  2023)

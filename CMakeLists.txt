@@ -30,5 +30,5 @@ add_spike_subdir(model)
 add_spike_subdir(cache)
 add_spike_subdir(database)
 add_spike_subdir(plants)
-
-# add_subdirectory(launcher)
+add_spike_subdir(track)
+add_subdirectory(launcher)
